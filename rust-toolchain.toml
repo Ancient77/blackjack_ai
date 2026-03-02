@@ -1,0 +1,3 @@
+# For https://doc.rust-lang.org/std/mem/fn.variant_count.html
+[toolchain]
+channel = "nightly"

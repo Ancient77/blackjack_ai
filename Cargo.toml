@@ -1,0 +1,8 @@
+[package]
+name = "blackjack_ai"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.20.1", features = ["wgpu"] }
+rand = "0.10.0"
