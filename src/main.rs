@@ -1,10 +1,10 @@
 #![feature(variant_count)]
 
-use crate::blackjack::game_loop;
+use crate::blackjack::game::Game;
 
 mod ai;
 mod blackjack;
 
 fn main() {
-    game_loop(None);
+    let score = Game::new().game_loop();
 }
