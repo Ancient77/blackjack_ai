@@ -1,6 +1,6 @@
 use crate::blackjack::card::Card;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Hand {
     pub cards: Vec<Card>,
 }

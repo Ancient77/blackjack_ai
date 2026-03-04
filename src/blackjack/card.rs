@@ -1,6 +1,9 @@
-use rand::{RngExt, distr::{Distribution, StandardUniform}};
+use rand::{
+    RngExt,
+    distr::{Distribution, StandardUniform},
+};
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Card {
     Two,
     Three,
@@ -32,7 +35,7 @@ impl Card {
             Card::Ace => ace_as,
         }
     }
-    
+
     pub fn is_ten_value(&self) -> bool {
         matches!(self, Card::Ten | Card::Jack | Card::Queen | Card::King)
     }

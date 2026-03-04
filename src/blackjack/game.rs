@@ -1,11 +1,17 @@
-use rand::{Rng, RngExt, SeedableRng, rngs::{StdRng, ThreadRng}};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     ai::ask_ai,
-    blackjack::{Action, card::Card, game_config::GameConfig, hand::Hand},
+    blackjack::{
+        Action,
+        card::Card,
+        card_source::{CardSource, RandomDeck},
+        game_config::GameConfig,
+        hand::Hand,
+    },
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum GameResult {
     Bust,
     DealerBust,
@@ -28,91 +34,70 @@ impl GameResult {
     }
 }
 
-#[derive(Clone)]
-pub struct Game<R: Rng> {
-    rng: R,
-    dealer_hand: Hand,
-    player_hand: Hand,
+//#[derive(Clone)]
+pub struct Game {
+    card_source: Rc<RefCell<dyn CardSource>>,
+    pub dealer_hand: Hand,
+    pub player_hand: Hand,
     result: Option<GameResult>,
     double_down: bool,
     config: GameConfig,
 }
 
-impl Default for Game<ThreadRng> {
+impl Default for Game {
     fn default() -> Self {
-        let mut rng = rand::rng();
-        Self {
-            dealer_hand: Hand {
-                cards: vec![rng.random()],
-            },
-            player_hand: Hand {
-                cards: vec![rng.random(), rng.random()],
-            },
-            result: None,
-            double_down: false,
-            config: GameConfig::default(),
-            rng: rng,
-        }
+        Game::with_deck(RandomDeck)
     }
 }
 
-impl Game<ThreadRng>  {
-        pub fn new() -> Self {
+impl Game {
+    pub fn new() -> Self {
         Self::default()
     }
-}
 
-impl Game<StdRng>  {
-    pub fn new_seeded(seed: u64) -> Self {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let dealer_hand = Hand { cards: vec![rng.random()] };
-        let player_hand = Hand { cards: vec![rng.random(), rng.random()] };
-
+    fn with_deck(mut deck: impl CardSource + 'static) -> Self {
         Self {
-            rng,
-            dealer_hand,
-            player_hand,
+            dealer_hand: Hand {
+                cards: vec![deck.draw()],
+            },
+            player_hand: Hand {
+                cards: vec![deck.draw(), deck.draw()],
+            },
             result: None,
             double_down: false,
             config: GameConfig::default(),
+            card_source: Rc::new(RefCell::new(deck)),
         }
     }
 }
 
-impl<R: Rng> Game<R> {
-    
-    pub fn from_split(card: Card, dealer_hand: Hand, config: GameConfig, mut rng: R) -> Self{
-         Self {
-            dealer_hand,
+impl Game {
+    pub fn from_split(game: &Game, card: &Card) -> Self {
+        Self {
+            dealer_hand: game.dealer_hand.clone(),
             player_hand: Hand {
-                cards: vec![card, rng.random()],
+                cards: vec![*card, game.card_source.borrow_mut().draw()],
             },
             result: None,
             double_down: false,
-            config: config,
-            rng
-    }
-        
-    }
-    
-    fn draw_card(&mut self) -> Card {
-        self.rng.random()
+            config: game.config,
+            card_source: game.card_source.clone(),
+        }
     }
 
     pub fn game_loop(mut self) -> f32 {
         self.ai_loop();
 
         if let Some(GameResult::Split) = &self.result {
-            let cards = self.player_hand.cards;
-            let score_a = Game::from_split(cards[0], self.dealer_hand.clone(), self.config, self.rng)
-                .game_loop();
-            let score_b = Game::from_split(cards[1], self.dealer_hand, self.config, self.rng)
-                .game_loop();
+            let cards = self.player_hand.cards.clone();
+            let score_a = Game::from_split(&self, &cards[0]).game_loop();
+            let score_b = Game::from_split(&self, &cards[1]).game_loop();
             return score_a + score_b;
         }
 
         self.dealer_loop();
 
+        println!("Outcome: {:?}", self.result);
         self.calculate_outcome()
     }
 
@@ -138,11 +123,11 @@ impl<R: Rng> Game<R> {
 
         loop {
             match ask_ai(self, &legal_moves) {
-                Action::Hit => self.player_hand.cards.push(self.draw_card()),
+                Action::Hit => self.player_hand.cards.push(self.card_source.borrow_mut().draw()),
                 Action::Stand => return,
                 Action::DoubleDown => {
                     self.double_down = true;
-                    self.player_hand.cards.push(self.draw_card());
+                    self.player_hand.cards.push(self.card_source.borrow_mut().draw());
                     if self.player_hand.is_bust() {
                         self.result = Some(GameResult::Bust);
                     }
@@ -159,7 +144,7 @@ impl<R: Rng> Game<R> {
                 Action::Insurance => todo!(),
             }
 
-            if self.player_hand.calc_points_ace_as_one() == 21 {
+            if self.player_hand.calc_points_best_possible() == 21 {
                 return;
             }
 
@@ -177,15 +162,12 @@ impl<R: Rng> Game<R> {
 
         //Hit until 17
         while self.dealer_hand.calc_points_best_possible() < 17 {
-            let new_card = self.draw_card();
-            self.dealer_hand.cards.push(new_card);
+            self.dealer_hand.cards.push(self.card_source.borrow_mut().draw());
         }
 
         if self.dealer_hand.is_bust() {
             self.result = Some(GameResult::DealerBust);
-        } else if self.dealer_hand.calc_points_best_possible()
-            == self.player_hand.calc_points_best_possible()
-        {
+        } else if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
             if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
                 self.result = Some(GameResult::Win);
             } else if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
@@ -194,9 +176,7 @@ impl<R: Rng> Game<R> {
             } else {
                 self.result = Some(GameResult::Tie);
             }
-        } else if self.dealer_hand.calc_points_best_possible()
-            < self.player_hand.calc_points_best_possible()
-        {
+        } else if self.dealer_hand.calc_points_best_possible() < self.player_hand.calc_points_best_possible() {
             self.result = Some(GameResult::Win);
         } else {
             self.result = Some(GameResult::DealerWin)
@@ -204,8 +184,8 @@ impl<R: Rng> Game<R> {
     }
 
     fn calculate_outcome(&self) -> f32 {
-        self
-            .result.as_ref()
+        self.result
+            .as_ref()
             .expect("Why dafaq is game not done at the end?")
             .score()
             * if self.double_down { 2.0 } else { 1.0 }

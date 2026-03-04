@@ -1,4 +1,5 @@
 mod card;
+mod card_source;
 pub mod game;
 mod game_config;
 mod hand;
@@ -11,6 +12,7 @@ mod hand;
 // Split is not implemented
 // Deck is infinite
 
+#[derive(Debug, Clone)]
 pub enum Action {
     Hit,
     Stand,

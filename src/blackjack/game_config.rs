@@ -1,4 +1,4 @@
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub struct GameConfig {
     action_on_17: Soft17Rule,
     peeking: HoleCardRule,
