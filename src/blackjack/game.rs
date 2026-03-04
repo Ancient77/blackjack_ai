@@ -161,27 +161,32 @@ impl Game {
         }
 
         //Hit until 17
-        while self.dealer_hand.calc_points_best_possible() < 17 {
+        while (self.config.action_on_17 == Soft17Rule::Stand && self.dealer_hand.calc_points_best_possible() < 17)
+            || (self.config.action_on_17 == Soft17Rule::Hit && self.dealer_hand.calc_points_best_possible() <= 17)
+        {
             self.dealer_hand.cards.push(self.card_source.borrow_mut().draw());
         }
-
-        if self.dealer_hand.is_bust() {
-            self.result = Some(GameResult::DealerBust);
-        } else if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
-            if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
-                self.result = Some(GameResult::Win);
-            } else if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
-                //This could be checked earlier
-                self.result = Some(GameResult::DealerWin);
-            } else {
-                self.result = Some(GameResult::Tie);
-            }
-        } else if self.dealer_hand.calc_points_best_possible() < self.player_hand.calc_points_best_possible() {
-            self.result = Some(GameResult::Win);
-        } else {
-            self.result = Some(GameResult::DealerWin)
-        }
     }
+
+    fn calculate_outcome(&mut self) -> f32 {
+        if self.result.is_none() {
+            if self.dealer_hand.is_bust() {
+                self.result = Some(GameResult::DealerBust);
+            } else if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
+                if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
+                    self.result = Some(GameResult::Win);
+                } else if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
+                    //This could be checked earlier
+                    self.result = Some(GameResult::DealerWin);
+                } else {
+                    self.result = Some(GameResult::Tie);
+                }
+            } else if self.dealer_hand.calc_points_best_possible() < self.player_hand.calc_points_best_possible() {
+                self.result = Some(GameResult::Win);
+            } else {
+                self.result = Some(GameResult::DealerWin)
+            }
+        }
 
     fn calculate_outcome(&self) -> f32 {
         self.result
