@@ -1,17 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    ai::ask_ai,
     blackjack::{
         Action,
         card::Card,
         card_source::{CardSource, RandomDeck},
-        game_config::GameConfig,
+        game_config::{GameConfig, Soft17Rule},
         hand::Hand,
     },
+    player::Player,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum GameResult {
     Bust,
     DealerBust,
@@ -37,6 +37,7 @@ impl GameResult {
 //#[derive(Clone)]
 pub struct Game {
     card_source: Rc<RefCell<dyn CardSource>>,
+    player: Rc<RefCell<dyn Player>>,
     pub dealer_hand: Hand,
     pub player_hand: Hand,
     result: Option<GameResult>,
@@ -44,18 +45,9 @@ pub struct Game {
     config: GameConfig,
 }
 
-impl Default for Game {
-    fn default() -> Self {
-        Game::with_deck(RandomDeck)
-    }
-}
-
 impl Game {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn with_deck(mut deck: impl CardSource + 'static) -> Self {
+    pub fn new(user: impl Player + 'static) -> Self {
+        let mut deck = RandomDeck;
         Self {
             dealer_hand: Hand {
                 cards: vec![deck.draw()],
@@ -67,6 +59,24 @@ impl Game {
             double_down: false,
             config: GameConfig::default(),
             card_source: Rc::new(RefCell::new(deck)),
+            player: Rc::new(RefCell::new(user)),
+        }
+    }
+
+    fn with_deck(
+        deck: impl CardSource + 'static,
+        user: impl Player + 'static,
+        dealer_hand: Hand,
+        player_hand: Hand,
+    ) -> Self {
+        Self {
+            dealer_hand,
+            player_hand,
+            result: None,
+            double_down: false,
+            config: GameConfig::default(),
+            card_source: Rc::new(RefCell::new(deck)),
+            player: Rc::new(RefCell::new(user)),
         }
     }
 }
@@ -82,11 +92,12 @@ impl Game {
             double_down: false,
             config: game.config,
             card_source: game.card_source.clone(),
+            player: game.player.clone(),
         }
     }
 
     pub fn game_loop(mut self) -> f32 {
-        self.ai_loop();
+        self.player_loop();
 
         if let Some(GameResult::Split) = &self.result {
             let cards = self.player_hand.cards.clone();
@@ -101,7 +112,7 @@ impl Game {
         self.calculate_outcome()
     }
 
-    fn ai_loop(&mut self) {
+    fn player_loop(&mut self) {
         let mut legal_moves: Vec<Action> = Vec::with_capacity(std::mem::variant_count::<Action>());
         // Blackjack
         //TODO: can only be tied by other blackjack
@@ -122,7 +133,7 @@ impl Game {
         ]));
 
         loop {
-            match ask_ai(self, &legal_moves) {
+            match self.player.borrow_mut().ask_user(self, &legal_moves) {
                 Action::Hit => self.player_hand.cards.push(self.card_source.borrow_mut().draw()),
                 Action::Stand => return,
                 Action::DoubleDown => {
@@ -188,11 +199,130 @@ impl Game {
             }
         }
 
-    fn calculate_outcome(&self) -> f32 {
         self.result
             .as_ref()
             .expect("Why dafaq is game not done at the end?")
             .score()
             * if self.double_down { 2.0 } else { 1.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        blackjack::{card_source::FixedDeck, game_config::Soft17Rule},
+        player::test_user::TestUser,
+    };
+
+    use super::*;
+
+    #[test]
+    fn dealer_bust() {
+        let deck = FixedDeck::new(vec![Card::Jack]);
+        let mut game = Game::with_deck(
+            deck,
+            TestUser::default(),
+            Hand {
+                cards: vec![Card::King, Card::Two],
+            },
+            Hand { cards: vec![] },
+        );
+        game.dealer_loop();
+        assert!(game.dealer_hand.cards.contains(&Card::Jack));
+
+        let outcome = game.calculate_outcome();
+        assert_eq!(game.result.unwrap(), GameResult::DealerBust);
+        assert_eq!(outcome, 1.0);
+    }
+
+    #[test]
+    fn dealer_hit_until_17() {
+        let deck = FixedDeck::new(vec![Card::King, Card::Three, Card::Two, Card::Nine]);
+        let mut game = Game::with_deck(
+            deck,
+            TestUser::default(),
+            Hand { cards: vec![] },
+            Hand { cards: vec![] },
+        );
+        game.dealer_loop();
+
+        assert_eq!(
+            game.dealer_hand.cards,
+            vec![Card::King, Card::Three, Card::Two, Card::Nine]
+        );
+    }
+
+    #[test]
+    fn dealer_hit_on_17_when_soft_17() {
+        let deck = FixedDeck::new(vec![Card::Six, Card::Ace, Card::Ace]);
+        let mut game = Game::with_deck(
+            deck,
+            TestUser::default(),
+            Hand { cards: vec![] },
+            Hand { cards: vec![] },
+        );
+        game.config.action_on_17 = Soft17Rule::Hit;
+        game.dealer_loop();
+
+        assert_eq!(game.dealer_hand.cards, vec![Card::Six, Card::Ace, Card::Ace]);
+    }
+
+    #[test]
+    fn dealer_stand_on_17_when_soft_17() {
+        let deck = FixedDeck::new(vec![Card::Six, Card::Ace, Card::Ace]);
+        let mut game = Game::with_deck(
+            deck,
+            TestUser::default(),
+            Hand { cards: vec![] },
+            Hand { cards: vec![] },
+        );
+        game.config.action_on_17 = Soft17Rule::Stand;
+        game.dealer_loop();
+
+        assert_eq!(game.dealer_hand.cards, vec![Card::Six, Card::Ace]);
+    }
+
+    #[test]
+    fn player_should_bust_over_21() {
+        let deck = FixedDeck::new(vec![
+            Card::Two,
+            Card::Three,
+            Card::Four,
+            Card::Five,
+            Card::Six,
+            Card::Seven,
+            Card::Eight,
+        ]);
+        let test_user = TestUser::new(vec![Action::Hit; 10]);
+        let mut game = Game::with_deck(deck, test_user, Hand { cards: vec![] }, Hand { cards: vec![] });
+        game.player_loop();
+
+        assert_eq!(
+            game.player_hand.cards,
+            vec![Card::Two, Card::Three, Card::Four, Card::Five, Card::Six, Card::Seven]
+        );
+        assert_eq!(game.result.unwrap(), GameResult::Bust);
+    }
+
+    #[test]
+    fn player_should_be_able_double_down() {
+        let deck = FixedDeck::new(vec![
+            Card::Two,
+            Card::Three,
+            Card::Four,
+            Card::Five,
+            Card::Six,
+            Card::Seven,
+            Card::Eight,
+        ]);
+        let test_user = TestUser::new(vec![Action::Hit; 10]);
+        let mut game = Game::with_deck(deck, test_user, Hand { cards: vec![] }, Hand { cards: vec![] });
+        game.player_loop();
+
+        assert_eq!(
+            game.player_hand.cards,
+            vec![Card::Two, Card::Three, Card::Four, Card::Five, Card::Six, Card::Seven]
+        );
+        assert_eq!(game.result.unwrap(), GameResult::DoubleDown);
     }
 }
