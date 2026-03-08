@@ -14,17 +14,20 @@ impl CardSource for RandomDeck {
     }
 }
 
+#[cfg(test)]
 pub struct FixedDeck {
     cards: Vec<Card>,
     index: usize,
 }
 
+#[cfg(test)]
 impl FixedDeck {
     pub fn new(cards: Vec<Card>) -> Self {
         Self { cards, index: 0 }
     }
 }
 
+#[cfg(test)]
 impl CardSource for FixedDeck {
     fn draw(&mut self) -> Card {
         let card = self.cards[self.index];

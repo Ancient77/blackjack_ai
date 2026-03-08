@@ -63,6 +63,7 @@ impl Game {
         }
     }
 
+    #[cfg(test)]
     fn with_deck(
         deck: impl CardSource + 'static,
         user: impl Player + 'static,
@@ -96,19 +97,18 @@ impl Game {
         }
     }
 
-    pub fn game_loop(mut self) -> f32 {
+    pub fn game_loop(&mut self) -> f32 {
         self.player_loop();
 
         if let Some(GameResult::Split) = &self.result {
             let cards = self.player_hand.cards.clone();
-            let score_a = Game::from_split(&self, &cards[0]).game_loop();
-            let score_b = Game::from_split(&self, &cards[1]).game_loop();
+            let score_a = Game::from_split(self, &cards[0]).game_loop();
+            let score_b = Game::from_split(self, &cards[1]).game_loop();
             return score_a + score_b;
         }
 
         self.dealer_loop();
 
-        println!("Outcome: {:?}", self.result);
         self.calculate_outcome()
     }
 
@@ -305,24 +305,68 @@ mod tests {
     }
 
     #[test]
-    fn player_should_be_able_double_down() {
-        let deck = FixedDeck::new(vec![
-            Card::Two,
-            Card::Three,
-            Card::Four,
-            Card::Five,
-            Card::Six,
-            Card::Seven,
-            Card::Eight,
-        ]);
-        let test_user = TestUser::new(vec![Action::Hit; 10]);
-        let mut game = Game::with_deck(deck, test_user, Hand { cards: vec![] }, Hand { cards: vec![] });
-        game.player_loop();
-
-        assert_eq!(
-            game.player_hand.cards,
-            vec![Card::Two, Card::Three, Card::Four, Card::Five, Card::Six, Card::Seven]
+    fn player_should_be_able_double_down_and_win() {
+        let deck = FixedDeck::new(vec![Card::Ace, Card::Five, Card::Seven]);
+        let test_user = TestUser::new(vec![Action::DoubleDown]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand {
+                cards: vec![Card::Five],
+            },
+            Hand {
+                cards: vec![Card::Five, Card::Five],
+            },
         );
-        assert_eq!(game.result.unwrap(), GameResult::DoubleDown);
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Five, Card::Five, Card::Ace]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Five, Card::Five, Card::Seven]);
+        assert_eq!(game.result.unwrap(), GameResult::Win);
+        assert_eq!(result, 2.0)
+    }
+
+    #[test]
+    fn player_should_be_able_double_down_and_lose() {
+        let deck = FixedDeck::new(vec![Card::Ten, Card::Five, Card::Ace]);
+        let test_user = TestUser::new(vec![Action::DoubleDown]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand {
+                cards: vec![Card::Five],
+            },
+            Hand {
+                cards: vec![Card::Five, Card::Five],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Five, Card::Five, Card::Ten]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Five, Card::Five, Card::Ace]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, -2.0)
+    }
+
+    #[test]
+    fn player_should_be_able_double_down_and_tie() {
+        let deck = FixedDeck::new(vec![Card::Ace, Card::Five, Card::Ace]);
+        let test_user = TestUser::new(vec![Action::DoubleDown]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand {
+                cards: vec![Card::Five],
+            },
+            Hand {
+                cards: vec![Card::Five, Card::Five],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Five, Card::Five, Card::Ace]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Five, Card::Five, Card::Ace]);
+        assert_eq!(game.result.unwrap(), GameResult::Tie);
+        assert_eq!(result, 0.0)
     }
 }

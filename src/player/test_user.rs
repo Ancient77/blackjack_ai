@@ -19,7 +19,7 @@ impl TestUser {
 }
 
 impl Player for TestUser {
-    fn ask_user(&mut self, game: &Game, legal_moves: &[Action]) -> Action {
+    fn ask_user(&mut self, _game: &Game, _legal_movess: &[Action]) -> Action {
         self.index += 1;
         self.actions_to_do[self.index - 1]
     }
