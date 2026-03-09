@@ -12,7 +12,7 @@ mod hand;
 // Split is not implemented
 // Deck is infinite
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Hit,
     Stand,

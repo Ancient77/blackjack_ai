@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod command_line_user;
+pub mod random_user;
 #[cfg(test)]
 pub mod test_user;
 
