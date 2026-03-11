@@ -36,7 +36,6 @@ impl GameResult {
     }
 }
 
-//#[derive(Clone)]
 pub struct Game {
     card_source: Rc<RefCell<dyn CardSource>>,
     player: Rc<RefCell<dyn Player>>,
@@ -119,28 +118,30 @@ impl Game {
     }
 
     fn player_loop(&mut self) {
-        let mut legal_moves = vec![
-            Action::Hit,
-            Action::Stand,
-            Action::DoubleDown,
-            Action::Split,
-            Action::Surrender,
-        ];
+        let mut legal_moves = vec![Action::Hit, Action::Stand, Action::DoubleDown, Action::Surrender];
 
         if self.dealer_hand.cards.contains(&Card::Ace) {
             legal_moves.push(Action::Insurance);
         }
 
-        //TODO: can only be tied by other blackjack
         if self.player_hand.is_natural_blackjack() {
             //TODO: Even money: If Dealer has Ace, Player can quit here with 1:1 Payout
             // (mathematically its the same as Insurance and always bad)
             return;
         }
 
+        if self.player_hand.cards[0].card_to_score_ace_as_var(11)
+            == self.player_hand.cards[1].card_to_score_ace_as_var(11)
+        {
+            legal_moves.push(Action::Split);
+        }
+
         loop {
             match self.player.borrow_mut().ask_user(self, &legal_moves) {
-                Action::Hit => self.player_hand.cards.push(self.card_source.borrow_mut().draw()),
+                Action::Hit => {
+                    self.player_hand.cards.push(self.card_source.borrow_mut().draw());
+                    legal_moves.retain(|&x| x != Action::DoubleDown);
+                }
                 Action::Stand => return,
                 Action::DoubleDown => {
                     self.double_down = true;
@@ -160,8 +161,11 @@ impl Game {
                 }
             }
 
-            // Remove Insurance & Split Option
-            legal_moves.retain(|&x| x != Action::Insurance && x != Action::Split);
+            // Remove Insurance, Split & Surrender Option
+            legal_moves.retain(|&x| {
+                x != Action::Insurance && x != Action::Split && x != Action::Surrender
+            });
+
 
             if self.player_hand.calc_points_best_possible() == 21 {
                 return;
@@ -335,17 +339,16 @@ mod tests {
 
     #[test]
     fn player_should_bust_over_21() {
-        let deck = FixedDeck::new(vec![
-            Card::Two,
-            Card::Three,
-            Card::Four,
-            Card::Five,
-            Card::Six,
-            Card::Seven,
-            Card::Eight,
-        ]);
+        let deck = FixedDeck::new(vec![Card::Four, Card::Five, Card::Six, Card::Seven, Card::Eight]);
         let test_user = TestUser::new(vec![Action::Hit; 10]);
-        let mut game = Game::with_deck(deck, test_user, Hand { cards: vec![] }, Hand { cards: vec![] });
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![] },
+            Hand {
+                cards: vec![Card::Two, Card::Three],
+            },
+        );
         game.player_loop();
 
         assert_eq!(
@@ -505,16 +508,14 @@ mod tests {
         let mut game = Game::with_deck(
             deck,
             test_user,
-            Hand {
-                cards: vec![Card::Ace],
-            },
+            Hand { cards: vec![Card::Ace] },
             Hand {
                 cards: vec![Card::Ten, Card::Six],
             },
         );
         let result = game.game_loop();
 
-        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Two]); 
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Two]);
         assert_eq!(game.dealer_hand.cards, vec![Card::Ace, Card::Ten]);
         assert_eq!(game.result.unwrap(), GameResult::DealerWin);
         assert_eq!(result, 0.0);
