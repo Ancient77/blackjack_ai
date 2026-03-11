@@ -42,6 +42,7 @@ pub struct Game {
     pub player_hand: Hand,
     result: Option<GameResult>,
     double_down: bool,
+    insurance: bool,
     config: GameConfig,
 }
 
@@ -57,6 +58,7 @@ impl Game {
             },
             result: None,
             double_down: false,
+            insurance: false,
             config: GameConfig::default(),
             card_source: Rc::new(RefCell::new(deck)),
             player: Rc::new(RefCell::new(user)),
@@ -75,6 +77,7 @@ impl Game {
             player_hand,
             result: None,
             double_down: false,
+            insurance: false,
             config: GameConfig::default(),
             card_source: Rc::new(RefCell::new(deck)),
             player: Rc::new(RefCell::new(user)),
@@ -91,6 +94,7 @@ impl Game {
             },
             result: None,
             double_down: false,
+            insurance: false,
             config: game.config,
             card_source: game.card_source.clone(),
             player: game.player.clone(),
@@ -113,24 +117,24 @@ impl Game {
     }
 
     fn player_loop(&mut self) {
-        let mut legal_moves: Vec<Action> = Vec::with_capacity(std::mem::variant_count::<Action>());
-        // Blackjack
-        //TODO: can only be tied by other blackjack
-        if self.player_hand.is_natural_blackjack() {
-            return;
-        }
-        if self.dealer_hand.cards.contains(&Card::Ace) {
-            // Ace
-            legal_moves.push(Action::Insurance);
-        }
-
-        legal_moves.append(&mut Vec::from([
+        let mut legal_moves = vec![
             Action::Hit,
             Action::Stand,
             Action::DoubleDown,
             Action::Split,
             Action::Surrender,
-        ]));
+        ];
+
+        if self.dealer_hand.cards.contains(&Card::Ace) {
+            legal_moves.push(Action::Insurance);
+        }
+
+        //TODO: can only be tied by other blackjack
+        if self.player_hand.is_natural_blackjack() {
+            //TODO: Even money: If Dealer has Ace, Player can quit here with 1:1 Payout
+            // (mathematically its the same as Insurance and always bad)
+            return;
+        }
 
         loop {
             match self.player.borrow_mut().ask_user(self, &legal_moves) {
@@ -149,15 +153,19 @@ impl Game {
                     self.result = Some(GameResult::Surrender);
                     return;
                 }
-                Action::Insurance => todo!(),
+                Action::Insurance => {
+                    self.insurance = true;
+                }
             }
+
+            // Remove Insurance & Split Option
+            legal_moves.retain(|&x| x != Action::Insurance && x != Action::Split);
 
             if self.player_hand.calc_points_best_possible() == 21 {
                 return;
             }
 
             if self.player_hand.calc_points_ace_as_one() > 21 {
-                self.result = Some(GameResult::Bust);
                 return;
             }
         }
@@ -396,5 +404,103 @@ mod tests {
         assert_eq!(game.dealer_hand.cards, vec![Card::Five, Card::Five, Card::Ace]);
         assert_eq!(game.result.unwrap(), GameResult::Tie);
         assert_eq!(result, 0.0)
+    }
+
+    #[test]
+    fn player_buys_insurance_dealer_no_blackjack_hits_and_busts() {
+        let deck = FixedDeck::new(vec![Card::Ten, Card::Nine]);
+        let test_user = TestUser::new(vec![Action::Insurance, Action::Hit]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Ten, Card::Five],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Five, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::Bust);
+        assert_eq!(result, -1.5);
+    }
+
+    #[test]
+    fn player_buys_insurance_dealer_no_blackjack_player_doubles_down_and_wins() {
+        let deck = FixedDeck::new(vec![Card::Ten, Card::Six]);
+        let test_user = TestUser::new(vec![Action::Insurance, Action::DoubleDown]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Six, Card::Five],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Six, Card::Five, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::Win);
+        assert_eq!(result, 1.5);
+    }
+
+    #[test]
+    fn player_declines_insurance_dealer_no_blackjack_player_hits_and_stands() {
+        let deck = FixedDeck::new(vec![Card::Five, Card::Six, Card::Three]);
+        let test_user = TestUser::new(vec![Action::Hit, Action::Stand]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Ten, Card::Six],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Five]);
+        assert_eq!(game.result.unwrap(), GameResult::Win);
+        assert_eq!(result, 1.0);
+    }
+
+    #[test]
+    fn player_declines_insurance_dealer_blackjack_player_hits_and_stands() {
+        let deck = FixedDeck::new(vec![Card::Five, Card::Ten]);
+        let test_user = TestUser::new(vec![Action::Hit, Action::Stand]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Ten, Card::Six],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Five]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, -1.0);
+    }
+
+    #[test]
+    fn player_buys_insurance_plays_hand_then_dealer_reveals_blackjack() {
+        let deck = FixedDeck::new(vec![Card::Two, Card::Ten]);
+        let test_user = TestUser::new(vec![Action::Insurance, Action::Hit, Action::Stand]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand {
+                cards: vec![Card::Ace],
+            },
+            Hand {
+                cards: vec![Card::Ten, Card::Six],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Two]); 
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ace, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, 0.0);
     }
 }
