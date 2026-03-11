@@ -20,6 +20,7 @@ enum GameResult {
     Tie,
     Surrender,
     Split,
+    BlackjackWin,
 }
 
 impl GameResult {
@@ -30,6 +31,7 @@ impl GameResult {
             GameResult::Surrender => -0.5,
             GameResult::Win | GameResult::DealerBust => 1.0,
             GameResult::Split => unreachable!("split is resolved in play()"),
+            GameResult::BlackjackWin => 1.5,
         }
     }
 }
@@ -189,6 +191,10 @@ impl Game {
             panic!("calculate_outcome started, result should be none.")
         }
 
+        if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
+            return GameResult::BlackjackWin;
+        }
+
         if self.player_hand.is_bust() {
             return GameResult::Bust;
         }
@@ -198,12 +204,7 @@ impl Game {
         }
 
         if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
-            if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
-                return GameResult::Win;
-            }
-
             if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
-                //This could be checked earlier
                 return GameResult::DealerWin;
             }
 
@@ -518,4 +519,106 @@ mod tests {
         assert_eq!(game.result.unwrap(), GameResult::DealerWin);
         assert_eq!(result, 0.0);
     }
+
+    #[test]
+    fn player_wins_tree_to_two_on_blackjack() {
+        let deck = FixedDeck::new(vec![Card::Ten]);
+        let test_user = TestUser::new(vec![]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ten] },
+            Hand {
+                cards: vec![Card::Ace, Card::Jack],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ace, Card::Jack]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::BlackjackWin);
+        assert_eq!(result, 1.5);
+    }
+
+    #[test]
+    fn player_wins_tree_to_two_on_blackjack_when_dealer_has_21() {
+        let deck = FixedDeck::new(vec![Card::Six, Card::Five]);
+        let test_user = TestUser::new(vec![]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ten] },
+            Hand {
+                cards: vec![Card::Ace, Card::Jack],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ace, Card::Jack]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten, Card::Six, Card::Five]);
+        assert_eq!(game.result.unwrap(), GameResult::BlackjackWin);
+        assert_eq!(result, 1.5);
+    }
+
+    #[test]
+    fn player_loses_one_21_when_dealer_blackjack() {
+        let deck = FixedDeck::new(vec![Card::Five, Card::Jack]);
+        let test_user = TestUser::new(vec![Action::Hit]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Ten, Card::Six],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Five]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ace, Card::Jack]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, -1.0);
+    }
+
+    #[test]
+    fn player_ties_on_both_blackjack() {
+        let deck = FixedDeck::new(vec![Card::Jack]);
+        let test_user = TestUser::new(vec![]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ace] },
+            Hand {
+                cards: vec![Card::Ace, Card::Jack],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ace, Card::Jack]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ace, Card::Jack]);
+        assert_eq!(game.result.unwrap(), GameResult::Tie);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn player_ties_on_both_21() {
+        let deck = FixedDeck::new(vec![Card::Five, Card::Three, Card::Eight]);
+        let test_user = TestUser::new(vec![Action::Hit, Action::Hit]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ten] },
+            Hand {
+                cards: vec![Card::Ten, Card::Six],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Ten, Card::Six, Card::Five]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten, Card::Three, Card::Eight]);
+        assert_eq!(game.result.unwrap(), GameResult::Tie);
+        assert_eq!(result, 0.0);
+    }
+
+    //TODO: Test Surrender
 }
