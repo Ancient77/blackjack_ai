@@ -125,15 +125,17 @@ impl Game {
         }
 
         if self.player_hand.is_natural_blackjack() {
-            //TODO: Even money: If Dealer has Ace, Player can quit here with 1:1 Payout
-            // (mathematically its the same as Insurance and always bad)
-            return;
+            legal_moves.retain(|&x| x != Action::Hit && x != Action::DoubleDown && x != Action::Surrender);
         }
 
         if self.player_hand.cards[0].card_to_score_ace_as_var(11)
             == self.player_hand.cards[1].card_to_score_ace_as_var(11)
         {
             legal_moves.push(Action::Split);
+        }
+
+        if legal_moves.len() == 1 {
+            return;
         }
 
         loop {
@@ -162,10 +164,7 @@ impl Game {
             }
 
             // Remove Insurance, Split & Surrender Option
-            legal_moves.retain(|&x| {
-                x != Action::Insurance && x != Action::Split && x != Action::Surrender
-            });
-
+            legal_moves.retain(|&x| x != Action::Insurance && x != Action::Split && x != Action::Surrender);
 
             if self.player_hand.calc_points_best_possible() == 21 {
                 return;
