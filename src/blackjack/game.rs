@@ -139,9 +139,6 @@ impl Game {
                 Action::DoubleDown => {
                     self.double_down = true;
                     self.player_hand.cards.push(self.card_source.borrow_mut().draw());
-                    if self.player_hand.is_bust() {
-                        self.result = Some(GameResult::Bust);
-                    }
                     return;
                 }
                 Action::Split => {
@@ -168,7 +165,7 @@ impl Game {
 
     fn dealer_loop(&mut self) {
         if self.result.is_some() {
-            return;
+            panic!("Dealer Loop started, result should be none.")
         }
 
         //Hit until 17
@@ -179,23 +176,52 @@ impl Game {
         }
     }
 
+    fn calculate_result(&mut self) -> GameResult {
+        if self.result.is_some() {
+            panic!("calculate_outcome started, result should be none.")
+        }
+
+        if self.player_hand.is_bust() {
+            return GameResult::Bust;
+        }
+
+        if self.dealer_hand.is_bust() {
+            return GameResult::DealerBust;
+        }
+
+        if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
+            if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
+                return GameResult::Win;
+            }
+
+            if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
+                //This could be checked earlier
+                return GameResult::DealerWin;
+            }
+
+            return GameResult::Tie;
+        }
+
+        if self.dealer_hand.calc_points_best_possible() < self.player_hand.calc_points_best_possible() {
+            return GameResult::Win;
+        }
+
+        GameResult::DealerWin
+    }
+
     fn calculate_outcome(&mut self) -> f32 {
-        if self.result.is_none() {
-            if self.dealer_hand.is_bust() {
-                self.result = Some(GameResult::DealerBust);
-            } else if self.dealer_hand.calc_points_best_possible() == self.player_hand.calc_points_best_possible() {
-                if self.player_hand.is_natural_blackjack() && !self.dealer_hand.is_natural_blackjack() {
-                    self.result = Some(GameResult::Win);
-                } else if !self.player_hand.is_natural_blackjack() && self.dealer_hand.is_natural_blackjack() {
-                    //This could be checked earlier
-                    self.result = Some(GameResult::DealerWin);
-                } else {
-                    self.result = Some(GameResult::Tie);
-                }
-            } else if self.dealer_hand.calc_points_best_possible() < self.player_hand.calc_points_best_possible() {
-                self.result = Some(GameResult::Win);
+        if self.result.is_some() {
+            panic!("calculate_outcome started, result should be none.")
+        }
+
+        self.result = Some(self.calculate_result());
+
+        let mut insurance_result = 0.0;
+        if self.insurance {
+            if self.dealer_hand.is_natural_blackjack() {
+                insurance_result = 1.0;
             } else {
-                self.result = Some(GameResult::DealerWin)
+                insurance_result = -0.5;
             }
         }
 
@@ -204,6 +230,7 @@ impl Game {
             .expect("Why dafaq is game not done at the end?")
             .score()
             * if self.double_down { 2.0 } else { 1.0 }
+            + insurance_result
     }
 }
 
@@ -301,6 +328,7 @@ mod tests {
             game.player_hand.cards,
             vec![Card::Two, Card::Three, Card::Four, Card::Five, Card::Six, Card::Seven]
         );
+        game.calculate_outcome();
         assert_eq!(game.result.unwrap(), GameResult::Bust);
     }
 
