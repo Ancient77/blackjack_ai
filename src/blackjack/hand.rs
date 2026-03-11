@@ -30,6 +30,10 @@ impl Hand {
         result
     }
 
+    pub fn is_soft_17(&self) -> bool {
+        self.cards.len() == 2 && self.cards.contains(&Card::Ace) && self.cards.contains(&Card::Six)
+    }
+
     //TODO: Multiple aces can be 1 and 11 at the same time
     pub fn calc_points_ace_as_one(&self) -> i32 {
         self.cards.iter().map(|card| card.card_to_score_ace_as_var(1)).sum()

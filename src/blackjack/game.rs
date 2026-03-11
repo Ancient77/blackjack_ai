@@ -177,8 +177,8 @@ impl Game {
         }
 
         //Hit until 17
-        while (self.config.action_on_17 == Soft17Rule::Stand && self.dealer_hand.calc_points_best_possible() < 17)
-            || (self.config.action_on_17 == Soft17Rule::Hit && self.dealer_hand.calc_points_best_possible() <= 17)
+        while (self.dealer_hand.calc_points_best_possible() < 17)
+            || (self.config.action_on_17 == Soft17Rule::Hit && self.dealer_hand.is_soft_17())
         {
             self.dealer_hand.cards.push(self.card_source.borrow_mut().draw());
         }
@@ -315,6 +315,21 @@ mod tests {
         game.dealer_loop();
 
         assert_eq!(game.dealer_hand.cards, vec![Card::Six, Card::Ace]);
+    }
+
+    #[test]
+    fn dealer_stand_on_17_when_no_soft_17() {
+        let deck = FixedDeck::new(vec![Card::Five, Card::Two, Card::Ace, Card::Two]);
+        let mut game = Game::with_deck(
+            deck,
+            TestUser::default(),
+            Hand { cards: vec![] },
+            Hand { cards: vec![] },
+        );
+        game.config.action_on_17 = Soft17Rule::Hit;
+        game.dealer_loop();
+
+        assert_eq!(game.dealer_hand.cards, vec![Card::Five, Card::Two, Card::Ace]);
     }
 
     #[test]
