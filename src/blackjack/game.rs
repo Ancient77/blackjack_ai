@@ -142,7 +142,7 @@ impl Game {
             match self.player.borrow_mut().ask_user(self, &legal_moves) {
                 Action::Hit => {
                     self.player_hand.cards.push(self.card_source.borrow_mut().draw());
-                    legal_moves.retain(|&x| x != Action::DoubleDown);
+                    legal_moves.retain(|&x| x != Action::DoubleDown && x != Action::Surrender);
                 }
                 Action::Stand => return,
                 Action::DoubleDown => {
@@ -160,11 +160,15 @@ impl Game {
                 }
                 Action::Insurance => {
                     self.insurance = true;
+                    self.dealer_hand.cards.push(self.card_source.borrow_mut().draw());
+                    if self.dealer_hand.is_natural_blackjack(){
+                        return;
+                    }
                 }
             }
 
-            // Remove Insurance, Split & Surrender Option
-            legal_moves.retain(|&x| x != Action::Insurance && x != Action::Split && x != Action::Surrender);
+            // Remove Insurance, Split Option
+            legal_moves.retain(|&x| x != Action::Insurance && x != Action::Split);
 
             if self.player_hand.calc_points_best_possible() == 21 {
                 return;
@@ -178,7 +182,7 @@ impl Game {
 
     fn dealer_loop(&mut self) {
         if self.result.is_some() {
-            panic!("Dealer Loop started, result should be none.")
+            return;
         }
 
         //Hit until 17
@@ -222,11 +226,9 @@ impl Game {
     }
 
     fn calculate_outcome(&mut self) -> f32 {
-        if self.result.is_some() {
-            panic!("calculate_outcome started, result should be none.")
+        if self.result.is_none() {
+            self.result = Some(self.calculate_result());
         }
-
-        self.result = Some(self.calculate_result());
 
         let mut insurance_result = 0.0;
         if self.insurance {
