@@ -161,7 +161,7 @@ impl Game {
                 Action::Insurance => {
                     self.insurance = true;
                     self.dealer_hand.cards.push(self.card_source.borrow_mut().draw());
-                    if self.dealer_hand.is_natural_blackjack(){
+                    if self.dealer_hand.is_natural_blackjack() {
                         return;
                     }
                 }
@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn player_buys_insurance_dealer_no_blackjack_player_doubles_down_and_wins() {
-        let deck = FixedDeck::new(vec![Card::Six,Card::Ten]);
+        let deck = FixedDeck::new(vec![Card::Six, Card::Ten]);
         let test_user = TestUser::new(vec![Action::Insurance, Action::DoubleDown]);
         let mut game = Game::with_deck(
             deck,
@@ -834,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Player wanted to choose DoubleDown, but it was not offered")]
     fn player_should_not_be_able_to_doubledown_after_hitting() {
         let deck = FixedDeck::new(vec![Card::Five]);
         let test_user = TestUser::new(vec![Action::Hit, Action::DoubleDown]);
@@ -843,14 +843,14 @@ mod tests {
             test_user,
             Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
         game.game_loop();
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Player wanted to choose Insurance, but it was not offered")]
     fn player_should_not_be_able_to_choose_insurace_after_hitting() {
         let deck = FixedDeck::new(vec![Card::Five]);
         let test_user = TestUser::new(vec![Action::Hit, Action::Insurance]);
@@ -859,30 +859,36 @@ mod tests {
             test_user,
             Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
         game.game_loop();
     }
 
     #[test]
-    #[should_panic]
     fn player_should_not_be_able_to_choose_insurace_after_doubledown() {
-        let deck = FixedDeck::new(vec![Card::Five]);
+        let deck = FixedDeck::new(vec![Card::Five, Card::Ten]);
         let test_user = TestUser::new(vec![Action::DoubleDown, Action::Insurance]);
         let mut game = Game::with_deck(
             deck,
             test_user,
             Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
-        game.game_loop();
+        let result = game.game_loop();
+
+        assert!(game.double_down);
+        assert!(!game.insurance);
+        assert_eq!(game.player_hand.cards, vec![Card::Three, Card::Six, Card::Five]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, -2.0);
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Player wanted to choose Surrender, but it was not offered")]
     fn player_should_not_be_able_to_choose_surrender_after_hitting() {
         let deck = FixedDeck::new(vec![Card::Five]);
         let test_user = TestUser::new(vec![Action::Hit, Action::Surrender]);
@@ -891,46 +897,52 @@ mod tests {
             test_user,
             Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
         game.game_loop();
     }
 
     #[test]
-    #[should_panic]
     fn player_should_not_be_able_to_choose_surrender_after_doubledown() {
-        let deck = FixedDeck::new(vec![Card::Five]);
+        let deck = FixedDeck::new(vec![Card::Five, Card::Ten]);
         let test_user = TestUser::new(vec![Action::DoubleDown, Action::Surrender]);
         let mut game = Game::with_deck(
             deck,
             test_user,
             Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
-        game.game_loop();
+        let result = game.game_loop();
+
+        assert!(game.double_down);
+        assert!(!game.insurance);
+        assert_eq!(game.player_hand.cards, vec![Card::Three, Card::Six, Card::Five]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten, Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::DealerWin);
+        assert_eq!(result, -2.0);
     }
 
     #[test]
-    #[should_panic]
-    fn player_should_not_be_able_to_choose_insurace_if_dealer_does_not_have_10_or_ace() {
+    #[should_panic(expected = "Player wanted to choose Insurance, but it was not offered")]
+    fn player_should_not_be_able_to_choose_insurace_if_dealer_does_not_have_an_ace() {
         let deck = FixedDeck::new(vec![Card::Five]);
         let test_user = TestUser::new(vec![Action::Hit, Action::Insurance]);
         let mut game = Game::with_deck(
             deck,
             test_user,
-            Hand { cards: vec![Card::Six] },
+            Hand { cards: vec![Card::Ten] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
         game.game_loop();
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Player wanted to choose Split, but it was not offered")]
     fn player_should_not_be_able_to_choose_split_if_cards_are_not_same_value() {
         let deck = FixedDeck::new(vec![Card::Five]);
         let test_user = TestUser::new(vec![Action::Hit, Action::Split]);
@@ -939,7 +951,7 @@ mod tests {
             test_user,
             Hand { cards: vec![Card::Six] },
             Hand {
-                cards: vec![Card::Ten, Card::Six],
+                cards: vec![Card::Three, Card::Six],
             },
         );
         game.game_loop();
@@ -1008,6 +1020,26 @@ mod tests {
     #[test]
     fn player_should_be_able_to_surrender() {
         let deck = FixedDeck::new(vec![]);
+        let test_user = TestUser::new(vec![Action::Surrender]);
+        let mut game = Game::with_deck(
+            deck,
+            test_user,
+            Hand { cards: vec![Card::Ten] },
+            Hand {
+                cards: vec![Card::Eight, Card::Ace],
+            },
+        );
+        let result = game.game_loop();
+
+        assert_eq!(game.player_hand.cards, vec![Card::Eight, Card::Ace]);
+        assert_eq!(game.dealer_hand.cards, vec![Card::Ten]);
+        assert_eq!(game.result.unwrap(), GameResult::Surrender);
+        assert_eq!(result, -0.5);
+    }
+
+    #[test]
+    fn player_should_be_able_to_surrender_even_when_dealer_would_bust() {
+        let deck = FixedDeck::new(vec![Card::Six, Card::Jack]);
         let test_user = TestUser::new(vec![Action::Surrender]);
         let mut game = Game::with_deck(
             deck,
@@ -1124,6 +1156,5 @@ mod tests {
         assert_eq!(game.result.unwrap(), GameResult::BlackjackWin);
         assert_eq!(result, 1.0);
     }
-    //TODO: Test Surrender
     //TODO: Test Split
 }
